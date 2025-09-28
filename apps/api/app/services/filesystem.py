@@ -16,93 +16,71 @@ def init_git_repo(repo_path: str) -> None:
 
 
 def scaffold_nextjs_minimal(repo_path: str) -> None:
-    """Create Next.js project using official create-next-app"""
-    import subprocess
-    import tempfile
+    """Create Next.js project by copying from template instead of running create-next-app
+    
+    This avoids network dependencies and potential timeouts or permission issues
+    when running npx create-next-app in server environments.
+    """
     import shutil
-    import platform
-
-    # Get parent directory to create project in
+    
+    # Get parent directory and project name
     parent_dir = Path(repo_path).parent
     project_name = Path(repo_path).name
-
+    
     try:
-        # Create Next.js app with TypeScript and Tailwind CSS
-        cmd = [
-            "npx",
-            "create-next-app@latest",
-            project_name,
-            "--typescript",
-            "--tailwind",
-            "--eslint",
-            "--app",
-            "--import-alias", "@/*",
-            "--use-npm",
-            "--skip-install",  # We'll install dependencies later (handled by backend)
-            "--yes"            # Auto-accept all prompts
-        ]
-
-        # Set environment for non-interactive mode
-        env = os.environ.copy()
-        env["CI"] = "true"  # Force non-interactive mode
-
-        # Windows-specific environment setup
-        is_windows = platform.system().lower() == "windows"
-        if is_windows:
-            env["FORCE_COLOR"] = "0"  # Disable colors that can cause issues
-            env["NPM_CONFIG_COLOR"] = "false"
-            env["NO_UPDATE_NOTIFIER"] = "true"
-        
         from app.core.terminal_ui import ui
-        ui.info(f"Running create-next-app with command: {' '.join(cmd)}", "Filesystem")
-
-        # Windows-specific subprocess configuration
-        subprocess_kwargs = {
-            "cwd": parent_dir,
-            "check": True,
-            "capture_output": True,
-            "text": True,
-            "env": env,
-            "timeout": 300  # 5 minute timeout
-        }
-
-        if is_windows:
-            # On Windows, use shell=True for better npm/npx compatibility
-            subprocess_kwargs["shell"] = True
-            # Convert command list to string for shell=True
-            cmd_str = " ".join(f'"{arg}"' if " " in arg else arg for arg in cmd)
-            ui.info(f"Windows detected - using shell mode: {cmd_str}", "Filesystem")
-            result = subprocess.run(cmd_str, **subprocess_kwargs)
-        else:
-            # Unix systems use the command list directly
-            result = subprocess.run(cmd, **subprocess_kwargs)
+        from app.core.config import settings
         
-        ui.success(f"Created Next.js app: {result.stdout}", "Filesystem")
+        # Path to the template directory
+        # First check if template is in the project root
+        template_path = os.path.join(settings.project_root, "templates", "nextjs-template")
         
-        # Skip npm install for faster project creation
-        # Users can run 'npm install' manually when needed
-        ui.info("Skipped dependency installation for faster setup", "Filesystem")
+        # If template doesn't exist in project root, try relative to current file
+        if not os.path.exists(template_path):
+            current_file_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.join(current_file_dir, "..", "..", "..", "..", "..")
+            project_root = os.path.abspath(project_root)
+            template_path = os.path.join(project_root, "templates", "nextjs-template")
         
-    except subprocess.TimeoutExpired as e:
-        ui.error("create-next-app timed out after 5 minutes", "Filesystem")
-        raise Exception(f"Project creation timed out. This might be due to slow network or hung process.")
-    except subprocess.CalledProcessError as e:
-        ui.error(f"Error creating Next.js app: {e}", "Filesystem")
-        ui.debug(f"Command: {' '.join(cmd)}", "Filesystem")
-        ui.debug(f"stdout: {e.stdout}", "Filesystem")
-        ui.debug(f"stderr: {e.stderr}", "Filesystem")
+        if not os.path.exists(template_path):
+            ui.error(f"Next.js template not found at {template_path}", "Filesystem")
+            raise Exception(f"Next.js template directory not found. Please ensure it exists at {template_path}")
         
-        # Provide more specific error messages
-        if "EACCES" in str(e.stderr):
-            error_msg = "Permission denied. Please check directory permissions."
-        elif "ENOENT" in str(e.stderr):
-            error_msg = "Command not found. Please ensure Node.js and npm are installed."
-        elif "network" in str(e.stderr).lower():
-            error_msg = "Network error. Please check your internet connection."
-        else:
-            error_msg = f"Failed to create Next.js project: {e.stderr or e.stdout or str(e)}"
+        ui.info(f"Using Next.js template from: {template_path}", "Filesystem")
         
-        raise Exception(error_msg)
+        # Ensure the target directory exists and is empty
+        if os.path.exists(repo_path):
+            shutil.rmtree(repo_path)
+        os.makedirs(repo_path, exist_ok=True)
+        
+        # Copy template files to the project directory
+        for item in os.listdir(template_path):
+            source = os.path.join(template_path, item)
+            destination = os.path.join(repo_path, item)
+            
+            if os.path.isdir(source):
+                shutil.copytree(source, destination)
+            else:
+                shutil.copy2(source, destination)
+        
+        # Update package.json with project name
+        package_json_path = os.path.join(repo_path, "package.json")
+        if os.path.exists(package_json_path):
+            import json
+            with open(package_json_path, 'r') as f:
+                package_data = json.load(f)
+            
+            package_data["name"] = project_name
+            
+            with open(package_json_path, 'w') as f:
+                json.dump(package_data, f, indent=2)
+        
+        ui.success(f"Created Next.js app from template at: {repo_path}", "Filesystem")
+        
+    except Exception as e:
+        from app.core.terminal_ui import ui
+        ui.error(f"Error creating Next.js app from template: {str(e)}", "Filesystem")
+        raise Exception(f"Failed to create Next.js project: {str(e)}")
 
 
 def write_env_file(project_dir: str, content: str) -> None:

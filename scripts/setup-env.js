@@ -89,8 +89,8 @@ DATABASE_URL=sqlite:///${path.join(rootDir, 'data', 'cc.db')}
     console.log(`  Created .env`);
     
     // Create or update apps/web/.env.local to match chosen API port
-    const desiredApiBase = `http://localhost:${apiPort}`;
-    const desiredWsBase = `ws://localhost:${apiPort}`;
+    const desiredApiBase = `http://111.111.111.111:${apiPort}`;
+    const desiredWsBase = `ws://111.111.111.111:${apiPort}`;
 
     const writeEnvLocal = (content) => {
       fs.writeFileSync(webEnvFile, content);

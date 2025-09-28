@@ -34,6 +34,9 @@ PROJECT_ROOT = find_project_root()
 class Settings(BaseModel):
     api_port: int = int(os.getenv("API_PORT", "8080"))
     
+    # Project root path
+    project_root: str = str(PROJECT_ROOT)
+    
     # SQLite database URL
     database_url: str = os.getenv(
         "DATABASE_URL",
