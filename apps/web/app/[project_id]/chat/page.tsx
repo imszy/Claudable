@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { AnimatePresence } from 'framer-motion';
 import { MotionDiv, MotionH3, MotionP, MotionButton } from '../../../lib/motion';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -329,10 +330,7 @@ export default function ChatPage({ params }: Params) {
   const [previewInitializationMessage, setPreviewInitializationMessage] = useState('Starting development server...');
   const [cliStatuses, setCliStatuses] = useState<Record<string, CliStatusSnapshot>>({});
   const [conversationId, setConversationId] = useState<string>(() => {
-    if (typeof window !== 'undefined' && window.crypto?.randomUUID) {
-      return window.crypto.randomUUID();
-    }
-    return '';
+    return uuidv4();
   });
   const [preferredCli, setPreferredCli] = useState<string>('claude');
   const [selectedModel, setSelectedModel] = useState<string>('');
@@ -1303,8 +1301,8 @@ export default function ChatPage({ params }: Params) {
     
     setIsRunning(true);
     
-    // ★ NEW: request_id 생성
-    const requestId = crypto.randomUUID();
+    // ★ NEW: request_id 생성 (using uuid library for cross-browser compatibility)
+    const requestId = uuidv4();
     
     try {
       // Handle images - convert UploadedImage format to API format
@@ -1446,8 +1444,8 @@ export default function ChatPage({ params }: Params) {
     setAgentWorkComplete(false);
     localStorage.setItem(`project_${projectId}_taskComplete`, 'false');
     
-    // ★ NEW: request_id 생성
-    const requestId = crypto.randomUUID();
+    // ★ NEW: request_id 생성 (using uuid library for cross-browser compatibility)
+    const requestId = uuidv4();
     
     // No need to add project structure info here - backend will add it for the AI agent
     
@@ -1993,7 +1991,7 @@ export default function ChatPage({ params }: Params) {
                           <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
                             <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-2">Currently published at:</p>
                             <a 
-                              href={publishedUrl} 
+                              href={publishedUrl || undefined} 
                               target="_blank" 
                               rel="noopener noreferrer" 
                               className="text-sm text-green-600 dark:text-green-300 font-mono hover:underline break-all"
