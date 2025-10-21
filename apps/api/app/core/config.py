@@ -44,6 +44,9 @@ class Settings(BaseModel):
     projects_root: str = os.getenv("PROJECTS_ROOT", str(PROJECT_ROOT / "data" / "projects"))
     projects_root_host: str = os.getenv("PROJECTS_ROOT_HOST", os.getenv("PROJECTS_ROOT", str(PROJECT_ROOT / "data" / "projects")))
     
+    # Shared repository path
+    shared_repo_root: str = os.getenv("SHARED_REPO_ROOT", str(PROJECT_ROOT / "data" / "repo"))
+    
     preview_port_start: int = int(os.getenv("PREVIEW_PORT_START", "3100"))
     preview_port_end: int = int(os.getenv("PREVIEW_PORT_END", "3999"))
 

@@ -29,24 +29,27 @@ async def initialize_project(project_id: str, name: str) -> str:
         str: Path to the created project directory
     """
     
-    # Create project directory
-    project_path = os.path.join(settings.projects_root, project_id, "repo")
-    ensure_dir(project_path)
+    # Ensure shared repo directory exists
+    ensure_dir(settings.shared_repo_root)
+    
+    # Create project data directory
+    project_data_path = os.path.join(settings.projects_root, project_id)
+    ensure_dir(project_data_path)
     
     # Create assets directory
-    assets_path = os.path.join(settings.projects_root, project_id, "assets")
+    assets_path = os.path.join(project_data_path, "assets")
     ensure_dir(assets_path)
     
     try:
-        # Scaffold NextJS project using create-next-app (includes automatic git init)
-        scaffold_nextjs_minimal(project_path)
+        # Initialize Git repo for shared repo if it doesn't exist yet
+        if not os.path.exists(os.path.join(settings.shared_repo_root, ".git")):
+            init_git_repo(settings.shared_repo_root)
+            
+        # For now, we'll use the shared repo as the project path
+        # Later we can create project-specific directories in the repo if needed
+        project_path = settings.shared_repo_root
         
-        # CRITICAL: Force create independent git repository for each project
-        # create-next-app inherits parent .git when run inside existing repo
-        # This ensures each project has its own isolated git history
-        init_git_repo(project_path)
-        
-        # Create initial .env file
+        # Create initial .env file in the shared repo
         env_content = f"NEXT_PUBLIC_PROJECT_ID={project_id}\nNEXT_PUBLIC_PROJECT_NAME={name}\n"
         write_env_file(project_path, env_content)
         
@@ -81,10 +84,10 @@ async def cleanup_project(project_id: str) -> bool:
         bool: True if cleanup was successful
     """
 
-    project_root = os.path.join(settings.projects_root, project_id)
+    project_data_path = os.path.join(settings.projects_root, project_id)
 
-    # Nothing to do
-    if not os.path.exists(project_root):
+    # Nothing to do if project data directory doesn't exist
+    if not os.path.exists(project_data_path):
         return False
 
     # 1) Ensure any running preview processes for this project are terminated
@@ -116,7 +119,8 @@ async def cleanup_project(project_id: str) -> bool:
     last_err = None
     while attempts < max_attempts:
         try:
-            shutil.rmtree(project_root, onerror=_onerror)
+            # Only delete the project data directory, not the shared repo
+            shutil.rmtree(project_data_path, onerror=_onerror)
             return True
         except OSError as e:
             last_err = e
@@ -136,7 +140,7 @@ async def cleanup_project(project_id: str) -> bool:
     # Final attempt to handle lingering dotfiles
     try:
         # Remove remaining leaf entries then rmdir tree if any
-        for root, dirs, files in os.walk(project_root, topdown=False):
+        for root, dirs, files in os.walk(project_data_path, topdown=False):
             for name in files:
                 try:
                     os.remove(os.path.join(root, name))
@@ -147,7 +151,7 @@ async def cleanup_project(project_id: str) -> bool:
                     os.rmdir(os.path.join(root, name))
                 except Exception:
                     pass
-        os.rmdir(project_root)
+        os.rmdir(project_data_path)
         return True
     except Exception as e:
         print(f"Error cleaning up project {project_id}: {e if e else last_err}")
@@ -165,10 +169,14 @@ async def get_project_path(project_id: str) -> Optional[str]:
         Optional[str]: Path to project directory if it exists
     """
     
-    project_path = os.path.join(settings.projects_root, project_id, "repo")
+    # Return the shared repo path
+    if os.path.exists(settings.shared_repo_root):
+        return settings.shared_repo_root
     
-    if os.path.exists(project_path):
-        return project_path
+    # Fallback to legacy path for backward compatibility
+    legacy_path = os.path.join(settings.projects_root, project_id, "repo")
+    if os.path.exists(legacy_path):
+        return legacy_path
     
     return None
 
