@@ -50,14 +50,14 @@ async def initialize_project(project_id: str, name: str) -> str:
         project_path = settings.shared_repo_root
         
         # Create initial .env file in the shared repo
-        env_content = f"NEXT_PUBLIC_PROJECT_ID={project_id}\nNEXT_PUBLIC_PROJECT_NAME={name}\n"
-        write_env_file(project_path, env_content)
+        #env_content = f"NEXT_PUBLIC_PROJECT_ID={project_id}\nNEXT_PUBLIC_PROJECT_NAME={name}\n"
+        #write_env_file(project_path, env_content)
         
         # Create metadata directory and initial metadata file
         create_project_metadata(project_id, name)
         
         # Setup Claude Code configuration
-        setup_claude_config(project_path)
+        #setup_claude_config(project_path)
         
         return project_path
         
