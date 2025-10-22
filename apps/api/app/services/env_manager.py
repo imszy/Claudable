@@ -15,8 +15,9 @@ from app.core.config import settings
 
 
 def get_project_env_path(project_id: str) -> Path:
-    """Get the path to project's .env file"""
-    return Path(settings.projects_root) / project_id / "repo" / ".env"
+    """Get the path to project's .env file in the shared repo"""
+    # Use the shared repo path instead of project-specific path
+    return Path(settings.shared_repo_root) / ".env"
 
 
 def parse_env_file(env_path: Path) -> Dict[str, str]:

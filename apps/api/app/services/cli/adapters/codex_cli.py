@@ -163,10 +163,9 @@ class CodexCLI(BaseCLI):
         # Get project ID for session management
         project_id = project_path.split("/")[-1] if "/" in project_path else project_path
 
-        # Determine the repo path - Codex should run in repo directory
-        project_repo_path = os.path.join(project_path, "repo")
-        if not os.path.exists(project_repo_path):
-            project_repo_path = project_path  # Fallback to project_path if repo subdir doesn't exist
+        # Use shared repo path instead of project-specific repo
+        from app.core.config import settings
+        project_repo_path = settings.shared_repo_root
 
         # Build Codex command - --cd must come BEFORE proto subcommand
         workdir_abs = os.path.abspath(project_repo_path)
@@ -885,11 +884,10 @@ Do not create subdirectories unless specifically requested by the user.
             return None
 
     async def _ensure_agent_md(self, project_path: str) -> None:
-        """Ensure AGENTS.md exists in project repo with system prompt"""
-        # Determine the repo path
-        project_repo_path = os.path.join(project_path, "repo")
-        if not os.path.exists(project_repo_path):
-            project_repo_path = project_path
+        """Ensure AGENTS.md exists in shared repo with system prompt"""
+        # Use shared repo path
+        from app.core.config import settings
+        project_repo_path = settings.shared_repo_root
 
         agent_md_path = os.path.join(project_repo_path, "AGENTS.md")
 

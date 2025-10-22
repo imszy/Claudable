@@ -34,7 +34,7 @@ async def repo_tree(project_id: str, dir: str = Query("."), db: Session = Depend
     if row.status == "initializing":
         raise HTTPException(status_code=400, detail="Project is still initializing")
     
-    repo_root = os.path.join(settings.projects_root, project_id, "repo")
+    repo_root = Path(settings.shared_repo_root) 
     
     # Check if repo directory exists
     if not os.path.exists(repo_root):
@@ -62,7 +62,7 @@ async def repo_file(project_id: str, path: str, db: Session = Depends(get_db)):
     row = db.get(ProjectModel, project_id)
     if not row:
         raise HTTPException(status_code=404, detail="Project not found")
-    repo_root = os.path.join(settings.projects_root, project_id, "repo")
+    repo_root = Path(settings.shared_repo_root) 
     target = _safe_join(repo_root, path)
     if not os.path.isfile(target):
         raise HTTPException(status_code=404, detail="File not found")

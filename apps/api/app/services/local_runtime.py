@@ -500,7 +500,7 @@ def stop_preview_process(project_id: str, cleanup_cache: bool = False) -> None:
     # Optionally cleanup npm cache
     if cleanup_cache:
         try:
-            repo_path = os.path.join(settings.projects_root, project_id, "repo")
+            repo_path = Path(settings.shared_repo_root)
             if os.path.exists(repo_path):
                 npm_cmd = _get_npm_executable()
                 subprocess.run(

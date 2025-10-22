@@ -63,9 +63,9 @@ class GeminiCLI(BaseCLI):
         Mirrors CursorAgent behavior: copy app/prompt/system-prompt.md if present.
         """
         try:
-            project_repo_path = os.path.join(project_path, "repo")
-            if not os.path.exists(project_repo_path):
-                project_repo_path = project_path
+            # Use shared repo path
+            from app.core.config import settings
+            project_repo_path = settings.shared_repo_root
             md_path = os.path.join(project_repo_path, "GEMINI.md")
             if os.path.exists(md_path):
                 ui.debug(f"GEMINI.md already exists at: {md_path}", "Gemini")
@@ -159,10 +159,9 @@ class GeminiCLI(BaseCLI):
         except Exception:
             pass
 
-        # Resolve repo cwd
-        project_repo_path = os.path.join(project_path, "repo")
-        if not os.path.exists(project_repo_path):
-            project_repo_path = project_path
+        # Use shared repo path
+        from app.core.config import settings
+        project_repo_path = settings.shared_repo_root
 
         # Project ID
         path_parts = project_path.split("/")

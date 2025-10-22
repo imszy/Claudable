@@ -219,11 +219,10 @@ class CursorAgentCLI(BaseCLI):
         return None
 
     async def _ensure_agent_md(self, project_path: str) -> None:
-        """Ensure AGENTS.md exists in project repo with system prompt"""
-        # Determine the repo path
-        project_repo_path = os.path.join(project_path, "repo")
-        if not os.path.exists(project_repo_path):
-            project_repo_path = project_path
+        """Ensure AGENTS.md exists in shared repo with system prompt"""
+        # Use shared repo path
+        from app.core.config import settings
+        project_repo_path = settings.shared_repo_root
 
         agent_md_path = os.path.join(project_repo_path, "AGENTS.md")
 
@@ -310,9 +309,9 @@ class CursorAgentCLI(BaseCLI):
             cmd.extend(["-m", cli_model])
             print(f"🔧 [Cursor] Using model: {cli_model}")
 
-        project_repo_path = os.path.join(project_path, "repo")
-        if not os.path.exists(project_repo_path):
-            project_repo_path = project_path  # Fallback to project_path if repo subdir doesn't exist
+        # Use shared repo path instead of project-specific repo
+        from app.core.config import settings
+        project_repo_path = settings.shared_repo_root
 
         try:
             process = await asyncio.create_subprocess_exec(

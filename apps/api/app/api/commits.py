@@ -24,7 +24,7 @@ async def commits(project_id: str, db: Session = Depends(get_db)) -> List[Commit
     row = db.get(ProjectModel, project_id)
     if not row:
         raise HTTPException(status_code=404, detail="Project not found")
-    repo = os.path.join(settings.projects_root, project_id, "repo")
+    repo = Path(settings.shared_repo_root) 
     return [Commit(**c) for c in list_commits(repo)]
 
 
@@ -33,7 +33,7 @@ async def commit_diff(project_id: str, commit_sha: str, db: Session = Depends(ge
     row = db.get(ProjectModel, project_id)
     if not row:
         raise HTTPException(status_code=404, detail="Project not found")
-    repo = os.path.join(settings.projects_root, project_id, "repo")
+    repo = Path(settings.shared_repo_root) 
     return {"diff": show_diff(repo, commit_sha)}
 
 
@@ -42,6 +42,6 @@ async def revert_to(project_id: str, commit_sha: str, db: Session = Depends(get_
     row = db.get(ProjectModel, project_id)
     if not row:
         raise HTTPException(status_code=404, detail="Project not found")
-    repo = os.path.join(settings.projects_root, project_id, "repo")
+    repo = Path(settings.shared_repo_root) 
     hard_reset(repo, commit_sha)
     return {"ok": True}

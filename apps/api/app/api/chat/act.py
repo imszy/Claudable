@@ -29,7 +29,7 @@ def build_project_info(project: Project, db: Session) -> dict:
     repo_path = project.repo_path
 
     if not repo_path or not os.path.exists(repo_path):
-        inferred_path = os.path.join(settings.projects_root, project.id, "repo")
+        inferred_path = Path(settings.shared_repo_root) 
         if os.path.exists(inferred_path):
             project.repo_path = inferred_path
             db.commit()

@@ -126,26 +126,15 @@ async def connect_github_repository(
         clone_url = repo_result["clone_url"]
         default_branch = repo_result.get("default_branch", "main")
         
-        # Setup local Git repository
-        # Try different path patterns
-        if project.repo_path and os.path.exists(project.repo_path):
-            # Use project repo path directly
-            repo_path = project.repo_path
-        elif project.repo_path and os.path.exists(os.path.join(project.repo_path, "repo")):
-            # Use repo subfolder
-            repo_path = os.path.join(project.repo_path, "repo")
-        else:
-            # Use standard project structure: ./data/projects/{project_id}/repo
-            from pathlib import Path
-            root_dir = Path(__file__).parent.parent.parent.parent  # Get to cc-lovable root
-            repo_path = root_dir / "data" / "projects" / project.id / "repo"
-            repo_path = str(repo_path.resolve())
-            
-            if not os.path.exists(repo_path):
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"Project repository not found at expected path: {repo_path}"
-                )
+        # Use shared repo path
+        from app.core.config import settings
+        repo_path = settings.shared_repo_root
+        
+        if not os.path.exists(repo_path):
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Shared repository not found at expected path: {repo_path}"
+            )
         
         if not repo_path or not os.path.exists(repo_path):
             raise HTTPException(status_code=500, detail=f"Could not create or find project repository path: {repo_path}")
@@ -311,18 +300,9 @@ async def push_github_repository(project_id: str, db: Session = Depends(get_db))
     if not connection:
         raise HTTPException(status_code=400, detail="GitHub repository not connected")
 
-    # Determine repo path
-    repo_path = None
-    if project.repo_path and os.path.exists(project.repo_path):
-        repo_path = project.repo_path
-    elif project.repo_path and os.path.exists(os.path.join(project.repo_path, "repo")):
-        repo_path = os.path.join(project.repo_path, "repo")
-    else:
-        from pathlib import Path
-        root_dir = Path(__file__).parent.parent.parent.parent
-        candidate = root_dir / "data" / "projects" / project.id / "repo"
-        if candidate.exists():
-            repo_path = str(candidate.resolve())
+    # Use shared repo path
+    from app.core.config import settings
+    repo_path = settings.shared_repo_root
 
     if not repo_path or not os.path.exists(repo_path):
         raise HTTPException(status_code=500, detail="Local repository path not found")
