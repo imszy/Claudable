@@ -10,6 +10,7 @@ import shutil
 from contextlib import closing
 from typing import Optional, Dict
 from app.core.config import settings
+from pathlib import Path
 
 
 # Global process registry to track running Next.js processes

@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List
 import os
+from pathlib import Path
 from app.core.config import settings
 from app.api.deps import get_db
 from sqlalchemy.orm import Session
