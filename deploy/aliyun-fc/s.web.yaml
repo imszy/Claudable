@@ -1,0 +1,37 @@
+edition: 3.0.0
+name: claudable-demo
+access: default
+
+services:
+  web:
+    component: fc3
+    props:
+      region: ${env.REGION}
+      service:
+        name: ${env.FC_SERVICE_NAME}
+      function:
+        name: web
+        description: Claudable Web (Next.js) - custom container
+        runtime: custom-container
+        timeout: 60
+        memorySize: 1024
+        cpu: 0.5
+        diskSize: 512
+        environmentVariables:
+          PORT: "9000"
+          NODE_ENV: production
+          API_BASE: ${env.API_BASE}
+          NEXT_PUBLIC_API_BASE: ${env.API_BASE}
+          NEXT_PUBLIC_WS_BASE: ${env.WS_BASE}
+        customContainerConfig:
+          image: ${env.WEB_IMAGE}
+          port: 9000
+      triggers:
+        - name: http
+          type: http
+          config:
+            authType: anonymous
+            methods:
+              - GET
+              - OPTIONS
+
