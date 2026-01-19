@@ -13,6 +13,9 @@
 - **容器镜像仓库（ACR）** 已开通（例如 `registry.cn-hangzhou.aliyuncs.com/<namespace>/...`）
 - 本地有 `docker`（用于构建镜像）
 
+> 重要：**ACR 经济版（Economy）目前无法满足 FC 自定义容器所需的镜像处理能力**，会在创建/更新函数时报错（类似 “Economy Edition ... no longer supports image processing”）。
+> 需要将 ACR 实例升级到 Standard/Enterprise（或换用非 Economy 的实例）后再部署。
+
 ---
 
 ## 方式 A（推荐）：用 FC 控制台部署两个“自定义容器函数”

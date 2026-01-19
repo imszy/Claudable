@@ -3,24 +3,36 @@ name: Deploy to Aliyun FC (cn-beijing)
 on:
   workflow_dispatch:
     inputs:
+      acr_instance_id:
+        description: "ACR InstanceId (must be Standard/Enterprise; Economy tier is not supported by FC custom container)"
+        required: false
+        default: "cri-noj39a1mn1uyamq9"
       acr_login_server:
-        description: "Optional: ACR Login Server (from ACR console). If empty, workflow will auto-try common endpoints."
+        description: "Optional: ACR Login Server (公网, from ACR console). If empty, workflow will auto-try common endpoints."
         required: false
         default: ""
+      acr_namespace:
+        description: "ACR namespace"
+        required: false
+        default: "github-demo"
 
 permissions:
   contents: read
 
 env:
   REGION: cn-beijing
-  ACR_NAMESPACE: github-demo
-  # ACR Enterprise instance id (required by GetAuthorizationToken in some accounts)
-  ACR_INSTANCE_ID: cri-noj39a1mn1uyamq9
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Set deploy variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "ACR_INSTANCE_ID=${{ github.event.inputs.acr_instance_id }}" >> "$GITHUB_ENV"
+          echo "ACR_NAMESPACE=${{ github.event.inputs.acr_namespace }}" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -153,6 +165,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "API_IMAGE=${API_IMAGE}"
+          echo "WEB_IMAGE=${WEB_IMAGE}"
           docker build -f apps/api/Dockerfile -t "${API_IMAGE}" .
           docker push "${API_IMAGE}"
 
@@ -193,9 +207,25 @@ jobs:
               }')"
 
             if aliyun fc GetFunction --functionName "${name}" >/dev/null 2>&1; then
-              aliyun fc UpdateFunction --functionName "${name}" --body "${body}"
+              if ! out="$(aliyun fc UpdateFunction --functionName "${name}" --body "${body}" 2>&1)"; then
+                echo "${out}"
+                if echo "${out}" | grep -qi "Economy Edition of Aliyun Container Registry"; then
+                  echo ""
+                  echo "ACR Economy(经济版) 已不支持 FC 自定义容器所需的镜像处理能力。"
+                  echo "请在 ACR 控制台升级实例到 Standard/Enterprise 或切换到非 Economy 的实例，然后重新运行 workflow（填入新的 acr_instance_id / acr_login_server）。"
+                fi
+                exit 1
+              fi
             else
-              aliyun fc CreateFunction --body "${body}"
+              if ! out="$(aliyun fc CreateFunction --body "${body}" 2>&1)"; then
+                echo "${out}"
+                if echo "${out}" | grep -qi "Economy Edition of Aliyun Container Registry"; then
+                  echo ""
+                  echo "ACR Economy(经济版) 已不支持 FC 自定义容器所需的镜像处理能力。"
+                  echo "请在 ACR 控制台升级实例到 Standard/Enterprise 或切换到非 Economy 的实例，然后重新运行 workflow（填入新的 acr_instance_id / acr_login_server）。"
+                fi
+                exit 1
+              fi
             fi
           }
 
