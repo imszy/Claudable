@@ -2,19 +2,21 @@ name: Deploy to Aliyun FC (cn-beijing)
 
 on:
   workflow_dispatch:
+    inputs:
+      acr_login_server:
+        description: "Optional: ACR Login Server (from ACR console). If empty, workflow will auto-try common endpoints."
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 env:
   REGION: cn-beijing
-  ACR_REGISTRY: registry.cn-beijing.aliyuncs.com
   ACR_NAMESPACE: github-demo
   # ACR Enterprise instance id (required by GetAuthorizationToken in some accounts)
   ACR_INSTANCE_ID: cri-noj39a1mn1uyamq9
   FC_SERVICE_NAME: claudable-demo
-  API_IMAGE: registry.cn-beijing.aliyuncs.com/github-demo/claudable-api:latest
-  WEB_IMAGE: registry.cn-beijing.aliyuncs.com/github-demo/claudable-web:latest
 
 jobs:
   deploy:
@@ -80,7 +82,40 @@ jobs:
             exit 1
           fi
 
-          echo "${password}" | docker login "${ACR_REGISTRY}" --username "${username}" --password-stdin
+          # Determine ACR login server. Different ACR editions/accounts expose different endpoints.
+          # If user passes it via workflow input, try it first.
+          input_server="${{ github.event.inputs.acr_login_server }}"
+          candidates=()
+          if [ -n "${input_server}" ]; then
+            candidates+=("${input_server}")
+          fi
+          # Common public endpoints
+          candidates+=(
+            "registry.${REGION}.aliyuncs.com"
+            "registry-vpc.${REGION}.aliyuncs.com"
+            "${ACR_INSTANCE_ID}.${REGION}.cr.aliyuncs.com"
+            "${ACR_INSTANCE_ID}-registry.${REGION}.cr.aliyuncs.com"
+            "registry.${REGION}.cr.aliyuncs.com"
+          )
+
+          login_server=""
+          for s in "${candidates[@]}"; do
+            echo "Trying docker login to: ${s}"
+            if echo "${password}" | docker login "${s}" --username "${username}" --password-stdin; then
+              login_server="${s}"
+              break
+            fi
+          done
+
+          if [ -z "${login_server}" ]; then
+            echo "ACR docker login failed for all candidate endpoints."
+            echo "Please provide the exact 'Login Server' from the ACR console via workflow input 'acr_login_server'."
+            exit 1
+          fi
+
+          echo "ACR_LOGIN_SERVER=${login_server}" >> "$GITHUB_ENV"
+          echo "API_IMAGE=${login_server}/${ACR_NAMESPACE}/claudable-api:latest" >> "$GITHUB_ENV"
+          echo "WEB_IMAGE=${login_server}/${ACR_NAMESPACE}/claudable-web:latest" >> "$GITHUB_ENV"
 
       - name: Build and push images
         shell: bash
