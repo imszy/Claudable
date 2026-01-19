@@ -61,6 +61,8 @@ jobs:
           ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_SECRET }}
         run: |
           set -euo pipefail
+          export DOCKER_CLIENT_TIMEOUT=300
+          export DOCKER_HTTP_TIMEOUT=300
           # Aliyun CLI uses env credentials automatically
           export ALIBABA_CLOUD_REGION_ID="${REGION}"
           export ALIBABA_CLOUD_ACCESS_KEY_ID
@@ -75,8 +77,8 @@ jobs:
           token_json="$(aliyun cr GetAuthorizationToken --RegionId "${REGION}" --InstanceId "${ACR_INSTANCE_ID}")"
           # Token response differs by CLI versions; try common fields.
           username="$(echo "${token_json}" | jq -r '.data.tempUserName // .data.TempUsername // .tempUserName // .TempUsername // .tempUsername // empty')"
-          password="$(echo "${token_json}" | jq -r '.data.authorizationToken // .data.AuthorizationToken // .authorizationToken // .AuthorizationToken // empty')"
-          if [ -z "${username}" ] || [ -z "${password}" ]; then
+          token="$(echo "${token_json}" | jq -r '.data.authorizationToken // .data.AuthorizationToken // .authorizationToken // .AuthorizationToken // empty')"
+          if [ -z "${username}" ] || [ -z "${token}" ]; then
             echo "Failed to parse ACR login token."
             echo "${token_json}"
             exit 1
@@ -89,27 +91,58 @@ jobs:
           if [ -n "${input_server}" ]; then
             candidates+=("${input_server}")
           fi
-          # Common public endpoints
+          # Prefer common *public* endpoints (公网). VPC endpoints are not reachable from GitHub-hosted runners.
           candidates+=(
             "registry.${REGION}.aliyuncs.com"
+            "${ACR_REGISTRY:-registry.${REGION}.aliyuncs.com}"
+            # VPC endpoint (last resort; usually unreachable from GitHub-hosted runners)
             "registry-vpc.${REGION}.aliyuncs.com"
-            "${ACR_INSTANCE_ID}.${REGION}.cr.aliyuncs.com"
-            "${ACR_INSTANCE_ID}-registry.${REGION}.cr.aliyuncs.com"
-            "registry.${REGION}.cr.aliyuncs.com"
           )
+
+          # Some accounts return AuthorizationToken in different formats:
+          # - raw password (use directly)
+          # - base64 of "username:password" (decode and take password part)
+          raw_password="${token}"
+          decoded_password=""
+          if echo "${token}" | grep -Eq '^[A-Za-z0-9+/=]+$'; then
+            decoded="$(echo "${token}" | base64 -d 2>/dev/null || true)"
+            if echo "${decoded}" | grep -q ':'; then
+              decoded_password="${decoded#*:}"
+            fi
+          fi
+
+          login_try() {
+            local server="$1"
+            local pass="$2"
+            local attempt="$3"
+            # do not echo password
+            echo "${pass}" | docker login "${server}" --username "${username}" --password-stdin >/tmp/docker_login_out 2>&1 && return 0
+            echo "docker login failed (attempt ${attempt}) for ${server}:"
+            sed -e 's/'"${pass}"'/[REDACTED]/g' /tmp/docker_login_out || true
+            return 1
+          }
 
           login_server=""
           for s in "${candidates[@]}"; do
             echo "Trying docker login to: ${s}"
-            if echo "${password}" | docker login "${s}" --username "${username}" --password-stdin; then
-              login_server="${s}"
-              break
-            fi
+            # Retry a few times to avoid transient network issues.
+            for i in 1 2 3; do
+              if login_try "${s}" "${raw_password}" "${i}"; then
+                login_server="${s}"
+                break
+              fi
+              if [ -n "${decoded_password}" ] && login_try "${s}" "${decoded_password}" "${i}"; then
+                login_server="${s}"
+                break
+              fi
+              sleep $((i * 3))
+            done
+            if [ -n "${login_server}" ]; then break; fi
           done
 
           if [ -z "${login_server}" ]; then
             echo "ACR docker login failed for all candidate endpoints."
-            echo "Please provide the exact 'Login Server' from the ACR console via workflow input 'acr_login_server'."
+            echo "Please provide the *public* 'Login Server (公网)' from the ACR console via workflow input 'acr_login_server'."
             exit 1
           fi
 
