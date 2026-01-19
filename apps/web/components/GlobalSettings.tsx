@@ -7,7 +7,9 @@ import ServiceConnectionModal from '@/components/ServiceConnectionModal';
 import { FaCog } from 'react-icons/fa';
 import { useGlobalSettings } from '@/contexts/GlobalSettingsContext';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
+// In production, prefer same-origin `/api/...` so the Next.js server can proxy via rewrites.
+// You can still override with NEXT_PUBLIC_API_BASE when running the frontend standalone.
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
 
 interface GlobalSettingsProps {
   isOpen: boolean;

@@ -1,0 +1,40 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      # Bind API on 8080 inside container
+      PORT: "8080"
+      API_PORT: "8080"
+      ENVIRONMENT: "production"
+      # Optional tuning / paths
+      PROJECTS_ROOT: "/workspace/data/projects"
+      PROJECTS_ROOT_HOST: "/workspace/data/projects"
+      SHARED_REPO_ROOT: "/workspace/data/repo"
+      PREVIEW_PORT_START: "3100"
+      PREVIEW_PORT_END: "3999"
+      # Secrets (set via .env on the host, docker compose will substitute)
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
+    volumes:
+      - ./data:/workspace/data
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NODE_ENV: "production"
+      PORT: "3000"
+      # Used by Next.js rewrites() to proxy browser calls like `/api/...` to the backend service.
+      API_BASE: "http://api:8080"
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+

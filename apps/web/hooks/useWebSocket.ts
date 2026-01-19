@@ -39,8 +39,12 @@ export function useWebSocket({
     }
 
     try {
-      const wsUrl = process.env.NEXT_PUBLIC_WS_BASE || 'ws://localhost:8080';
-      const fullUrl = `${wsUrl}/api/chat/${projectId}`;
+      const wsBase =
+        process.env.NEXT_PUBLIC_WS_BASE ||
+        (typeof window !== 'undefined'
+          ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:8080`
+          : 'ws://localhost:8080');
+      const fullUrl = `${wsBase}/api/chat/${projectId}`;
       const ws = new WebSocket(fullUrl);
 
       ws.onopen = () => {
