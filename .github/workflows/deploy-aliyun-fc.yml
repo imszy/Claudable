@@ -10,6 +10,8 @@ env:
   REGION: cn-beijing
   ACR_REGISTRY: registry.cn-beijing.aliyuncs.com
   ACR_NAMESPACE: github-demo
+  # ACR Enterprise instance id (required by GetAuthorizationToken in some accounts)
+  ACR_INSTANCE_ID: cri-noj39a1mn1uyamq9
   FC_SERVICE_NAME: claudable-demo
   API_IMAGE: registry.cn-beijing.aliyuncs.com/github-demo/claudable-api:latest
   WEB_IMAGE: registry.cn-beijing.aliyuncs.com/github-demo/claudable-web:latest
@@ -62,21 +64,16 @@ jobs:
           export ALIBABA_CLOUD_ACCESS_KEY_ID
           export ALIBABA_CLOUD_ACCESS_KEY_SECRET
 
-          # Some ACR setups (e.g. Enterprise Edition) require InstanceId.
-          # Try to auto-detect InstanceId in the target region.
-          instance_json="$(aliyun cr GetInstanceList --RegionId "${REGION}" || true)"
-          instance_id="$(echo "${instance_json}" | jq -r '.. | .instanceId? // empty' | head -n 1 || true)"
-          if [ -z "${instance_id}" ]; then
-            echo "Failed to detect ACR InstanceId in region ${REGION}."
-            echo "Raw instance list output:"
-            echo "${instance_json}"
+          if [ -z "${ACR_INSTANCE_ID:-}" ]; then
+            echo "Missing env ACR_INSTANCE_ID (required for aliyun cr GetAuthorizationToken in this account)."
             exit 1
           fi
-          echo "Detected ACR InstanceId: ${instance_id}"
+          echo "Using ACR InstanceId: ${ACR_INSTANCE_ID}"
 
-          token_json="$(aliyun cr GetAuthorizationToken --RegionId "${REGION}" --InstanceId "${instance_id}")"
-          username="$(echo "${token_json}" | jq -r '.. | .tempUserName? // empty' | head -n 1)"
-          password="$(echo "${token_json}" | jq -r '.. | .authorizationToken? // empty' | head -n 1)"
+          token_json="$(aliyun cr GetAuthorizationToken --RegionId "${REGION}" --InstanceId "${ACR_INSTANCE_ID}")"
+          # Token response differs by CLI versions; try common fields.
+          username="$(echo "${token_json}" | jq -r '.data.tempUserName // .tempUserName // empty')"
+          password="$(echo "${token_json}" | jq -r '.data.authorizationToken // .authorizationToken // empty')"
           if [ -z "${username}" ] || [ -z "${password}" ]; then
             echo "Failed to parse ACR login token."
             echo "${token_json}"
