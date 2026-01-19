@@ -18,13 +18,15 @@ FROM node:22-slim AS builder
 WORKDIR /workspace
 
 COPY --from=deps /workspace/node_modules /workspace/node_modules
+COPY --from=deps /workspace/apps/web/node_modules /workspace/apps/web/node_modules
 COPY --from=deps /workspace/package.json /workspace/package.json
 COPY --from=deps /workspace/package-lock.json /workspace/package-lock.json
 
 COPY apps/web /workspace/apps/web
 
 # Build Next.js app
-RUN npm run -w apps/web build
+WORKDIR /workspace/apps/web
+RUN npm run build
 
 FROM node:22-slim AS runner
 ENV NODE_ENV=production \
@@ -37,8 +39,8 @@ COPY --from=builder /workspace/apps/web/.next /workspace/apps/web/.next
 COPY --from=builder /workspace/apps/web/public /workspace/apps/web/public
 COPY --from=builder /workspace/apps/web/package.json /workspace/apps/web/package.json
 COPY --from=builder /workspace/apps/web/next.config.js /workspace/apps/web/next.config.js
-COPY --from=builder /workspace/node_modules /workspace/node_modules
+COPY --from=builder /workspace/apps/web/node_modules /workspace/apps/web/node_modules
 
 EXPOSE 9000
 
-CMD ["sh", "-c", "node /workspace/node_modules/next/dist/bin/next start -p ${PORT:-9000}"]
+CMD ["sh", "-c", "node node_modules/next/dist/bin/next start -p ${PORT:-9000}"]
