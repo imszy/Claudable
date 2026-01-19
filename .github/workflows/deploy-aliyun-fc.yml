@@ -1,0 +1,120 @@
+name: Deploy to Aliyun FC (cn-beijing)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  REGION: cn-beijing
+  ACR_REGISTRY: registry.cn-beijing.aliyuncs.com
+  ACR_NAMESPACE: github-demo
+  FC_SERVICE_NAME: claudable-demo
+  API_IMAGE: registry.cn-beijing.aliyuncs.com/github-demo/claudable-api:latest
+  WEB_IMAGE: registry.cn-beijing.aliyuncs.com/github-demo/claudable-web:latest
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools (aliyun cli, serverless devs)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm i -g @serverless-devs/s@latest
+
+          curl -fsSL "https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz" -o /tmp/aliyun.tgz
+          tar -xzf /tmp/aliyun.tgz -C /tmp
+          sudo mv /tmp/aliyun /usr/local/bin/aliyun
+          aliyun version
+
+      - name: Configure Serverless Devs access
+        shell: bash
+        env:
+          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_ID }}
+          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ALIBABA_CLOUD_ACCESS_KEY_ID:-}" ] || [ -z "${ALIBABA_CLOUD_ACCESS_KEY_SECRET:-}" ]; then
+            echo "Missing secrets: ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET"
+            exit 1
+          fi
+          s config add -a default \
+            --AccessKeyID "${ALIBABA_CLOUD_ACCESS_KEY_ID}" \
+            --AccessKeySecret "${ALIBABA_CLOUD_ACCESS_KEY_SECRET}" \
+            --force
+
+      - name: Login to ACR (temporary token)
+        shell: bash
+        env:
+          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_ID }}
+          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_SECRET }}
+        run: |
+          set -euo pipefail
+          # Aliyun CLI uses env credentials automatically
+          export ALIBABA_CLOUD_REGION_ID="${REGION}"
+          export ALIBABA_CLOUD_ACCESS_KEY_ID
+          export ALIBABA_CLOUD_ACCESS_KEY_SECRET
+
+          token_json="$(aliyun cr GetAuthorizationToken --RegionId "${REGION}")"
+          username="$(echo "${token_json}" | jq -r '.data.tempUserName')"
+          password="$(echo "${token_json}" | jq -r '.data.authorizationToken')"
+
+          echo "${password}" | docker login "${ACR_REGISTRY}" --username "${username}" --password-stdin
+
+      - name: Build and push images
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -f apps/api/Dockerfile -t "${API_IMAGE}" .
+          docker push "${API_IMAGE}"
+
+          docker build -f apps/web/Dockerfile -t "${WEB_IMAGE}" .
+          docker push "${WEB_IMAGE}"
+
+      - name: Deploy API (FC custom container)
+        id: deploy_api
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ensure fc3 component exists (safe if already installed)
+          s component install fc3 || true
+          out="$(s deploy -t deploy/aliyun-fc/s.api.yaml -a default -o raw)"
+          echo "${out}"
+
+          api_url="$(echo "${out}" | grep -Eo 'https?://[^[:space:]]+\\.fcapp\\.run[^[:space:]]*' | head -n 1 || true)"
+          if [ -z "${api_url}" ]; then
+            # fallback: try to find any URL line
+            api_url="$(echo "${out}" | grep -Eo 'https?://[^[:space:]]+' | head -n 1 || true)"
+          fi
+          if [ -z "${api_url}" ]; then
+            echo "Failed to parse API trigger URL from deployment output."
+            exit 1
+          fi
+          echo "api_url=${api_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Web (FC custom container)
+        shell: bash
+        env:
+          API_BASE: ${{ steps.deploy_api.outputs.api_url }}
+        run: |
+          set -euo pipefail
+          ws_base="${API_BASE}"
+          ws_base="${ws_base/https:\/\//wss:\/\/}"
+          ws_base="${ws_base/http:\/\//ws:\/\/}"
+          export API_BASE
+          export WS_BASE="${ws_base}"
+
+          out="$(s deploy -t deploy/aliyun-fc/s.web.yaml -a default -o raw)"
+          echo "${out}"
+
+          web_url="$(echo "${out}" | grep -Eo 'https?://[^[:space:]]+\\.fcapp\\.run[^[:space:]]*' | head -n 1 || true)"
+          if [ -n "${web_url}" ]; then
+            echo ""
+            echo "Web URL: ${web_url}"
+          fi
+

@@ -79,3 +79,28 @@ docker push registry.cn-hangzhou.aliyuncs.com/<namespace>/claudable-web:latest
 
 > Serverless Devs / FC3 的 YAML 字段在不同版本可能略有差异；如果遇到字段报错，以控制台方式为准。
 
+---
+
+## 方式 C（推荐给我代部署）：GitHub Actions 一键部署（无需本地 Docker）
+
+仓库包含工作流：`.github/workflows/deploy-aliyun-fc.yml`，默认目标：
+
+- Region：`cn-beijing`
+- ACR：`registry.cn-beijing.aliyuncs.com/github-demo`
+- 镜像：
+  - `claudable-api:latest`
+  - `claudable-web:latest`
+- FC Service：`claudable-demo`（函数名：`api` / `web`）
+- HTTP 触发器：匿名（Anonymous）
+
+你只需要在 GitHub 仓库里配置 2 个 Secrets：
+
+- `ALIBABA_CLOUD_ACCESS_KEY_ID`
+- `ALIBABA_CLOUD_ACCESS_KEY_SECRET`
+
+然后到 GitHub 的 Actions 页面手动触发 **Deploy to Aliyun FC (cn-beijing)** 即可完成：
+
+1. 构建并 push 两个镜像到 ACR
+2. 部署 API 到 FC，并自动解析 API 触发器 URL
+3. 部署 Web 到 FC，并自动设置 `NEXT_PUBLIC_API_BASE / API_BASE / NEXT_PUBLIC_WS_BASE`
+

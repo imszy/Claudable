@@ -1,0 +1,38 @@
+edition: 3.0.0
+name: claudable-demo
+access: default
+
+services:
+  api:
+    component: fc3
+    props:
+      region: ${env.REGION}
+      service:
+        name: ${env.FC_SERVICE_NAME}
+      function:
+        name: api
+        description: Claudable API (FastAPI) - custom container
+        runtime: custom-container
+        timeout: 600
+        memorySize: 1024
+        cpu: 0.5
+        diskSize: 512
+        environmentVariables:
+          PORT: "9000"
+          API_PORT: "9000"
+        customContainerConfig:
+          image: ${env.API_IMAGE}
+          port: 9000
+      triggers:
+        - name: http
+          type: http
+          config:
+            authType: anonymous
+            methods:
+              - GET
+              - POST
+              - PUT
+              - PATCH
+              - DELETE
+              - OPTIONS
+
