@@ -26,6 +26,8 @@ jobs:
         run: |
           set -euo pipefail
           npm i -g @serverless-devs/s@latest
+          sudo apt-get update -y
+          sudo apt-get install -y jq
 
           curl -fsSL "https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz" -o /tmp/aliyun.tgz
           tar -xzf /tmp/aliyun.tgz -C /tmp
@@ -60,9 +62,26 @@ jobs:
           export ALIBABA_CLOUD_ACCESS_KEY_ID
           export ALIBABA_CLOUD_ACCESS_KEY_SECRET
 
-          token_json="$(aliyun cr GetAuthorizationToken --RegionId "${REGION}")"
-          username="$(echo "${token_json}" | jq -r '.data.tempUserName')"
-          password="$(echo "${token_json}" | jq -r '.data.authorizationToken')"
+          # Some ACR setups (e.g. Enterprise Edition) require InstanceId.
+          # Try to auto-detect InstanceId in the target region.
+          instance_json="$(aliyun cr GetInstanceList --RegionId "${REGION}" || true)"
+          instance_id="$(echo "${instance_json}" | jq -r '.. | .instanceId? // empty' | head -n 1 || true)"
+          if [ -z "${instance_id}" ]; then
+            echo "Failed to detect ACR InstanceId in region ${REGION}."
+            echo "Raw instance list output:"
+            echo "${instance_json}"
+            exit 1
+          fi
+          echo "Detected ACR InstanceId: ${instance_id}"
+
+          token_json="$(aliyun cr GetAuthorizationToken --RegionId "${REGION}" --InstanceId "${instance_id}")"
+          username="$(echo "${token_json}" | jq -r '.. | .tempUserName? // empty' | head -n 1)"
+          password="$(echo "${token_json}" | jq -r '.. | .authorizationToken? // empty' | head -n 1)"
+          if [ -z "${username}" ] || [ -z "${password}" ]; then
+            echo "Failed to parse ACR login token."
+            echo "${token_json}"
+            exit 1
+          fi
 
           echo "${password}" | docker login "${ACR_REGISTRY}" --username "${username}" --password-stdin
 
