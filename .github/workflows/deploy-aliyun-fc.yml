@@ -72,8 +72,8 @@ jobs:
 
           token_json="$(aliyun cr GetAuthorizationToken --RegionId "${REGION}" --InstanceId "${ACR_INSTANCE_ID}")"
           # Token response differs by CLI versions; try common fields.
-          username="$(echo "${token_json}" | jq -r '.data.tempUserName // .tempUserName // empty')"
-          password="$(echo "${token_json}" | jq -r '.data.authorizationToken // .authorizationToken // empty')"
+          username="$(echo "${token_json}" | jq -r '.data.tempUserName // .data.TempUsername // .tempUserName // .TempUsername // .tempUsername // empty')"
+          password="$(echo "${token_json}" | jq -r '.data.authorizationToken // .data.AuthorizationToken // .authorizationToken // .AuthorizationToken // empty')"
           if [ -z "${username}" ] || [ -z "${password}" ]; then
             echo "Failed to parse ACR login token."
             echo "${token_json}"
