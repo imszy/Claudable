@@ -9,7 +9,9 @@ COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/package.json
 
 # Install all workspace deps (includes `apps/web`)
-RUN npm ci
+# Root `postinstall` tries to create local env/venv which is not needed for image builds.
+# Skip lifecycle scripts to avoid requiring repo-only helper files.
+RUN npm ci --ignore-scripts
 
 FROM node:22-slim AS builder
 WORKDIR /workspace
