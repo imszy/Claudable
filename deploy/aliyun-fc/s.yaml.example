@@ -1,0 +1,79 @@
+edition: 3.0.0
+name: claudable-demo
+access: default
+
+vars:
+  region: cn-hangzhou
+  serviceName: claudable-demo
+
+  # Replace with your ACR image addresses
+  apiImage: registry.cn-hangzhou.aliyuncs.com/<namespace>/claudable-api:latest
+  webImage: registry.cn-hangzhou.aliyuncs.com/<namespace>/claudable-web:latest
+
+services:
+  api:
+    component: fc3
+    props:
+      region: ${vars.region}
+      service:
+        name: ${vars.serviceName}
+      function:
+        name: api
+        description: Claudable API (FastAPI) - custom container
+        runtime: custom-container
+        timeout: 600
+        memorySize: 1024
+        cpu: 0.5
+        diskSize: 512
+        environmentVariables:
+          PORT: "9000"
+          API_PORT: "9000"
+        customContainerConfig:
+          image: ${vars.apiImage}
+          port: 9000
+      triggers:
+        - name: http
+          type: http
+          config:
+            authType: anonymous
+            methods:
+              - GET
+              - POST
+              - PUT
+              - PATCH
+              - DELETE
+              - OPTIONS
+
+  web:
+    component: fc3
+    props:
+      region: ${vars.region}
+      service:
+        name: ${vars.serviceName}
+      function:
+        name: web
+        description: Claudable Web (Next.js) - custom container
+        runtime: custom-container
+        timeout: 60
+        memorySize: 1024
+        cpu: 0.5
+        diskSize: 512
+        # IMPORTANT: update these after api is deployed (or set via console)
+        environmentVariables:
+          PORT: "9000"
+          NODE_ENV: production
+          API_BASE: https://<api-trigger-domain>
+          NEXT_PUBLIC_API_BASE: https://<api-trigger-domain>
+          NEXT_PUBLIC_WS_BASE: wss://<api-trigger-domain>
+        customContainerConfig:
+          image: ${vars.webImage}
+          port: 9000
+      triggers:
+        - name: http
+          type: http
+          config:
+            authType: anonymous
+            methods:
+              - GET
+              - OPTIONS
+
