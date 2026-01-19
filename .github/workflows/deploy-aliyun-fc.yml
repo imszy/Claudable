@@ -16,7 +16,6 @@ env:
   ACR_NAMESPACE: github-demo
   # ACR Enterprise instance id (required by GetAuthorizationToken in some accounts)
   ACR_INSTANCE_ID: cri-noj39a1mn1uyamq9
-  FC_SERVICE_NAME: claudable-demo
 
 jobs:
   deploy:
@@ -25,11 +24,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install tools (aliyun cli, serverless devs)
+      - name: Install tools (aliyun cli)
         shell: bash
         run: |
           set -euo pipefail
-          npm i -g @serverless-devs/s@latest
           sudo apt-get update -y
           sudo apt-get install -y jq
 
@@ -38,7 +36,7 @@ jobs:
           sudo mv /tmp/aliyun /usr/local/bin/aliyun
           aliyun version
 
-      - name: Configure Serverless Devs access
+      - name: Configure Aliyun CLI (AK)
         shell: bash
         env:
           ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIBABA_CLOUD_ACCESS_KEY_ID }}
@@ -49,10 +47,12 @@ jobs:
             echo "Missing secrets: ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET"
             exit 1
           fi
-          s config add -a default \
-            --AccessKeyID "${ALIBABA_CLOUD_ACCESS_KEY_ID}" \
-            --AccessKeySecret "${ALIBABA_CLOUD_ACCESS_KEY_SECRET}" \
-            --force
+          aliyun configure set \
+            --profile "default" \
+            --mode AK \
+            --region "${REGION}" \
+            --access-key-id "${ALIBABA_CLOUD_ACCESS_KEY_ID}" \
+            --access-key-secret "${ALIBABA_CLOUD_ACCESS_KEY_SECRET}"
 
       - name: Login to ACR (temporary token)
         shell: bash
@@ -94,7 +94,6 @@ jobs:
           # Prefer common *public* endpoints (公网). VPC endpoints are not reachable from GitHub-hosted runners.
           candidates+=(
             "registry.${REGION}.aliyuncs.com"
-            "${ACR_REGISTRY:-registry.${REGION}.aliyuncs.com}"
             # VPC endpoint (last resort; usually unreachable from GitHub-hosted runners)
             "registry-vpc.${REGION}.aliyuncs.com"
           )
@@ -160,45 +159,152 @@ jobs:
           docker build -f apps/web/Dockerfile -t "${WEB_IMAGE}" .
           docker push "${WEB_IMAGE}"
 
-      - name: Deploy API (FC custom container)
+      - name: Deploy API (Aliyun FC custom container)
         id: deploy_api
         shell: bash
         run: |
           set -euo pipefail
-          # Ensure fc3 component exists (safe if already installed)
-          s component install fc3 || true
-          out="$(s deploy -t deploy/aliyun-fc/s.api.yaml -a default -o raw)"
-          echo "${out}"
+          export ALIBABA_CLOUD_REGION_ID="${REGION}"
 
-          api_url="$(echo "${out}" | grep -Eo 'https?://[^[:space:]]+\\.fcapp\\.run[^[:space:]]*' | head -n 1 || true)"
-          if [ -z "${api_url}" ]; then
-            # fallback: try to find any URL line
-            api_url="$(echo "${out}" | grep -Eo 'https?://[^[:space:]]+' | head -n 1 || true)"
-          fi
-          if [ -z "${api_url}" ]; then
-            echo "Failed to parse API trigger URL from deployment output."
+          upsert_function() {
+            local name="$1"
+            local image="$2"
+            local timeout="$3"
+            local body
+            body="$(jq -nc \
+              --arg functionName "${name}" \
+              --arg runtime "custom-container" \
+              --arg image "${image}" \
+              --argjson port 9000 \
+              --argjson timeout "${timeout}" \
+              --argjson memorySize 1024 \
+              --argjson cpu 0.5 \
+              --argjson diskSize 512 \
+              --argjson envVars '{"PORT":"9000","API_PORT":"9000"}' \
+              '{
+                functionName: $functionName,
+                runtime: $runtime,
+                timeout: $timeout,
+                memorySize: $memorySize,
+                cpu: $cpu,
+                diskSize: $diskSize,
+                environmentVariables: $envVars,
+                customContainerConfig: { image: $image, port: $port }
+              }')"
+
+            if aliyun fc GetFunction --functionName "${name}" >/dev/null 2>&1; then
+              aliyun fc UpdateFunction --functionName "${name}" --body "${body}"
+            else
+              aliyun fc CreateFunction --body "${body}"
+            fi
+          }
+
+          upsert_trigger() {
+            local functionName="$1"
+            local triggerName="$2"
+            local methods_json="$3"
+            local body
+            body="$(jq -nc \
+              --arg triggerName "${triggerName}" \
+              --arg triggerType "http" \
+              --arg authType "anonymous" \
+              --argjson methods "${methods_json}" \
+              '{
+                triggerName: $triggerName,
+                triggerType: $triggerType,
+                triggerConfig: { authType: $authType, methods: $methods }
+              }')"
+
+            if aliyun fc GetTrigger --functionName "${functionName}" --triggerName "${triggerName}" >/dev/null 2>&1; then
+              aliyun fc UpdateTrigger --functionName "${functionName}" --triggerName "${triggerName}" --body "${body}"
+            else
+              aliyun fc CreateTrigger --functionName "${functionName}" --body "${body}"
+            fi
+          }
+
+          # API function + anonymous http trigger
+          upsert_function "api" "${API_IMAGE}" 600
+          upsert_trigger "api" "http" '["GET","POST","PUT","PATCH","DELETE","OPTIONS"]'
+
+          trig="$(aliyun fc GetTrigger --functionName api --triggerName http)"
+          api_url="$(echo "${trig}" | jq -r '.urlInternet // .url_internet // .url // empty')"
+          if [ -z "${api_url}" ] || [ "${api_url}" = "null" ]; then
+            echo "Failed to read API trigger internet URL from GetTrigger response:"
+            echo "${trig}"
             exit 1
           fi
           echo "api_url=${api_url}" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy Web (FC custom container)
+      - name: Deploy Web (Aliyun FC custom container)
         shell: bash
         env:
           API_BASE: ${{ steps.deploy_api.outputs.api_url }}
         run: |
           set -euo pipefail
+          export ALIBABA_CLOUD_REGION_ID="${REGION}"
           ws_base="${API_BASE}"
           ws_base="${ws_base/https:\/\//wss:\/\/}"
           ws_base="${ws_base/http:\/\//ws:\/\/}"
-          export API_BASE
-          export WS_BASE="${ws_base}"
 
-          out="$(s deploy -t deploy/aliyun-fc/s.web.yaml -a default -o raw)"
-          echo "${out}"
+          body="$(jq -nc \
+            --arg functionName "web" \
+            --arg runtime "custom-container" \
+            --arg image "${WEB_IMAGE}" \
+            --argjson port 9000 \
+            --argjson timeout 60 \
+            --argjson memorySize 1024 \
+            --argjson cpu 0.5 \
+            --argjson diskSize 512 \
+            --arg API_BASE "${API_BASE}" \
+            --arg WS_BASE "${ws_base}" \
+            '{
+              functionName: $functionName,
+              runtime: $runtime,
+              timeout: $timeout,
+              memorySize: $memorySize,
+              cpu: $cpu,
+              diskSize: $diskSize,
+              environmentVariables: {
+                PORT: "9000",
+                NODE_ENV: "production",
+                API_BASE: $API_BASE,
+                NEXT_PUBLIC_API_BASE: $API_BASE,
+                NEXT_PUBLIC_WS_BASE: $WS_BASE
+              },
+              customContainerConfig: { image: $image, port: $port }
+            }')"
 
-          web_url="$(echo "${out}" | grep -Eo 'https?://[^[:space:]]+\\.fcapp\\.run[^[:space:]]*' | head -n 1 || true)"
-          if [ -n "${web_url}" ]; then
+          if aliyun fc GetFunction --functionName "web" >/dev/null 2>&1; then
+            aliyun fc UpdateFunction --functionName "web" --body "${body}"
+          else
+            aliyun fc CreateFunction --body "${body}"
+          fi
+
+          # anonymous http trigger for web
+          trig_body="$(jq -nc \
+            --arg triggerName "http" \
+            --arg triggerType "http" \
+            --arg authType "anonymous" \
+            --argjson methods '["GET","OPTIONS"]' \
+            '{
+              triggerName: $triggerName,
+              triggerType: $triggerType,
+              triggerConfig: { authType: $authType, methods: $methods }
+            }')"
+
+          if aliyun fc GetTrigger --functionName "web" --triggerName "http" >/dev/null 2>&1; then
+            aliyun fc UpdateTrigger --functionName "web" --triggerName "http" --body "${trig_body}"
+          else
+            aliyun fc CreateTrigger --functionName "web" --body "${trig_body}"
+          fi
+
+          web_trig="$(aliyun fc GetTrigger --functionName web --triggerName http)"
+          web_url="$(echo "${web_trig}" | jq -r '.urlInternet // .url_internet // .url // empty')"
+          if [ -n "${web_url}" ] && [ "${web_url}" != "null" ]; then
             echo ""
             echo "Web URL: ${web_url}"
+          else
+            echo "Failed to parse Web URL:"
+            echo "${web_trig}"
           fi
 
