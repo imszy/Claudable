@@ -1,0 +1,109 @@
+name: Deploy to VPS via SSH (Docker Compose)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/ssh-cee4
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+
+      - name: Deploy (remote docker compose)
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          BRANCH: ${{ github.ref_name }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DEPLOY_HOST:-}" ] || [ -z "${DEPLOY_USER:-}" ]; then
+            echo "Missing secrets: DEPLOY_HOST / DEPLOY_USER"
+            exit 1
+          fi
+          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "Missing secret: ANTHROPIC_API_KEY"
+            exit 1
+          fi
+          if [ -z "${ENCRYPTION_KEY:-}" ]; then
+            echo "Missing secret: ENCRYPTION_KEY"
+            exit 1
+          fi
+
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          app_dir="/opt/claudable/app"
+
+          # Trust host key on first connect to keep it non-interactive.
+          ssh -o StrictHostKeyChecking=accept-new "${target}" "bash -se" <<REMOTE
+          set -euo pipefail
+
+          echo "[1/7] Install base packages..."
+          if command -v apt-get >/dev/null 2>&1; then
+            apt-get update -y
+            apt-get install -y git ca-certificates curl gnupg
+          fi
+
+          echo "[2/7] Install Docker if needed..."
+          if ! command -v docker >/dev/null 2>&1; then
+            curl -fsSL https://get.docker.com | sh
+            systemctl enable --now docker || true
+          fi
+
+          echo "[3/7] Ensure docker compose is available..."
+          if ! docker compose version >/dev/null 2>&1; then
+            if command -v apt-get >/dev/null 2>&1; then
+              apt-get update -y
+              apt-get install -y docker-compose-plugin
+            else
+              echo "docker compose is missing and apt-get is unavailable."
+              exit 1
+            fi
+          fi
+
+          echo "[4/7] Clone/update repo..."
+          mkdir -p "${app_dir}"
+          cd "${app_dir}"
+          if [ -d ".git" ]; then
+            git fetch --all --prune
+          else
+            git clone "${REPO_URL}" .
+          fi
+
+          git checkout "${BRANCH}" || git checkout -b "${BRANCH}" "origin/${BRANCH}"
+          git pull --ff-only origin "${BRANCH}" || true
+
+          echo "[5/7] Write .env from GitHub Secrets..."
+          cat > .env <<ENVFILE
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+ENCRYPTION_KEY=${ENCRYPTION_KEY}
+ENVFILE
+
+          echo "[6/7] Ensure data dir exists..."
+          mkdir -p data
+
+          echo "[7/7] docker compose up (build + detach)..."
+          docker compose up -d --build
+
+          echo "OK"
+REMOTE
+

@@ -78,3 +78,18 @@ docker compose pull --ignore-pull-failures || true
 docker compose up -d --build
 ```
 
+## 6) 全自动：GitHub Actions 触发部署（无需你本机操作）
+
+仓库已包含工作流：`.github/workflows/deploy-ssh-docker-compose.yml`（push 到 `cursor/ssh-cee4` 或手动 `workflow_dispatch` 会部署）。
+
+你只需要在 GitHub 仓库 Settings → Secrets and variables → Actions 里添加这些 Secrets：
+
+- `DEPLOY_HOST`: `47.245.120.53`
+- `DEPLOY_USER`: `root`
+- `DEPLOY_SSH_PRIVATE_KEY`: 用于登录服务器的私钥（建议 ED25519）
+- `ANTHROPIC_API_KEY`: 你的 Anthropic Key
+- `ENCRYPTION_KEY`: 32+ 随机字符（建议 `openssl rand -hex 32`）
+
+之后每次 push 到该分支，GitHub Actions 会自动：
+安装 Docker/Compose（若缺失）→ 拉取仓库 → 写入 `.env` → `docker compose up -d --build`
+
